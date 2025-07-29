@@ -61,7 +61,7 @@ jobs:
         run: |
           set -euo pipefail
           xcodebuild \
-            -scheme "YOUR_SCHEME" \
+            -scheme "JenTest" \
             -destination "platform=iOS Simulator,name=iPhone 15,OS=18.0" \
             -enableCodeCoverage YES \
             test | xcpretty && exit ${PIPESTATUS[0]}
