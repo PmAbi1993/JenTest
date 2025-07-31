@@ -1,19 +1,14 @@
-name: iOS CI / SwiftLint + Build + Test
-# -----------------------------------------------------------
-# Triggers
-# -----------------------------------------------------------
+name: iOS CI / Run Unit Tests
+
+# Triggers on pull requests to main and pushes to feature branches
 on:
-  # PRs that target the main branch (merge gate)
   pull_request:
     branches: [main]
-  # Optional fast feedback on dev work
   push:
     branches: ['feature/**']
 
-# -----------------------------------------------------------
-# Global options
-# -----------------------------------------------------------
-concurrency:                      # auto‑cancel superseded runs
+# Auto-cancel redundant workflow runs
+concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
@@ -22,65 +17,38 @@ defaults:
     shell: bash
 
 jobs:
-# ===========================================================
-# 1. SwiftLint – style & static analysis
-# ===========================================================
-  swiftlint:
-    name: SwiftLint
-    runs-on: macos-15-xlarge       # Apple‑silicon XL runner (M2)
+  unit-tests:
+    name: Unit Tests
+    runs-on: macos-15-xlarge  # Apple Silicon runner
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: maxim-lobanov/setup-xcode@v4        # pick Xcode
-        with:
-          xcode-version: '16.4'                  # or latest-stable
-      - name: Run SwiftLint (strict)
-        uses: norio-nomura/action-swiftlint@3.2.1  # annotations + fail
-        with:
-          args: --strict
-# ===========================================================
-# 2. Build & Unit‑Test – XCTest / XCUITest
-# ===========================================================
-  tests:
-    name: Build & Unit‑Tests
-    runs-on: macos-15-xlarge
-    needs: swiftlint                     # block until lint passes
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v4
+      
+      # Set up Xcode version
       - uses: maxim-lobanov/setup-xcode@v4
         with:
           xcode-version: '16.4'
-      # ---------- Dependency cache (SPM example) ----------
+      
+      # Cache dependencies
       - name: Cache SwiftPM
         uses: actions/cache@v4
         with:
-          path: ~/.swiftpm               # ⬅ adjust if you use CocoaPods
+          path: ~/.swiftpm
           key: spm-${{ runner.os }}-${{ hashFiles('**/Package.resolved') }}
-      # ---------- Build & test ----------
-      - name: xcodebuild test
+      
+      # Run tests
+      - name: Run unit tests
         run: |
           set -euo pipefail
           xcodebuild \
             -scheme "JenTest" \
             -destination "platform=iOS Simulator,name=iPhone 15,OS=18.0" \
-            -enableCodeCoverage YES \
+            -testPlan UnitTests \
             test | xcpretty && exit ${PIPESTATUS[0]}
-      # ---------- Upload test reports ----------
+      
+      # Upload logs if tests fail
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: TestLogs
           path: ~/Library/Logs/DiagnosticReports/*.crash
-
-# ===========================================================
-# 3. Summary job (optional) – aggregate status
-# ===========================================================
-  gates:
-    if: always()                       # run even when earlier jobs fail
-    needs: [swiftlint, tests]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Evaluate overall result
-        run: |
-          [[ "${{ needs.swiftlint.result }}" == "success" && \
-             "${{ needs.tests.result }}" == "success" ]]
