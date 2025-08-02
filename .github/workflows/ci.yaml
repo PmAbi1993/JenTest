@@ -1,4 +1,4 @@
-name: iOS CI — macos-14
+name: iOS CI — macos-14 with auto-runtime
 
 on:
   pull_request:
@@ -8,29 +8,57 @@ on:
 
 jobs:
   test:
-    runs-on: macos-14          # Apple-silicon runner
-    timeout-minutes: 30
+    runs-on: macos-14          # Apple-silicon
+    timeout-minutes: 45        # first run needs extra time to download runtime
 
     steps:
-      # 1. Fetch code
+      # 1. Checkout code
       - uses: actions/checkout@v4
 
-      # 2. Select an Xcode that still bundles an iOS runtime
-      - uses: maxim-lobanov/setup-xcode@v1
+      # 2. Select Xcode (16.1 still fine on macos-14)
+      - id: xcode
+        uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '16.1'   # ⇠ iOS 17.x simulator included
+          xcode-version: '16.1'   # change only when *you* decide
 
-      # 3. Build the app and run all unit tests
-      - name: Build & Test
+      # 3. Restore (or prime) the iOS runtime cache
+      - name: Cache iOS simulator runtime
+        uses: actions/cache@v4
+        with:
+          path: /Library/Developer/CoreSimulator/Profiles/Runtimes
+          key: ${{ runner.os }}-xcode-${{ steps.xcode.outputs.xcode-path }}-ios-runtimes
+
+      # 4. Install the runtime if the cache was empty
+      - name: Ensure iOS runtime exists
         run: |
-          set -o pipefail
+          if ! xcrun simctl list runtimes | grep -q "iOS"; then
+            echo "No iOS runtime found – downloading..."
+            sudo xcodebuild -downloadPlatform iOS
+          else
+            echo "iOS runtime already present."
+          fi
+
+      # 5. List the now-available simulators (debug aid)
+      - name: List simulators
+        run: xcrun simctl list devices --json
+
+      # 6. Build & test
+      - name: Build and run unit tests
+        run: |
+          set -eo pipefail
+          # grab the first iPhone simulator UDID
+          UDID=$(xcrun simctl list devices | \
+                 grep -E "iPhone 15 .* (Booted|Shutdown)" | \
+                 head -n1 | \
+                 awk -F '[()]' '{print $2}')
+          echo "Using simulator: $UDID"
           xcodebuild \
             -project JenTest.xcodeproj \
             -scheme JenTest \
-            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            -destination "id=$UDID" \
             clean test
 
-      # 4. Always keep the xcresult bundle for inspection
+      # 7. Always save xcresult for post-mortem
       - uses: actions/upload-artifact@v4
         if: always()
         with:
