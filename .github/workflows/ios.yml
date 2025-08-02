@@ -28,5 +28,5 @@ jobs:
           xcodebuild \
             -project JenTest.xcodeproj \
             -scheme JenTest \
-            -destination 'platform=iOS Simulator,OS=latest' \
+            -destination 'platform=iOS Simulator,name=iPhone 16' \
             clean test
