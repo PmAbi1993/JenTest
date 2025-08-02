@@ -1,0 +1,57 @@
+name: iOS CI – build & test
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: macos-14          # Apple-silicon runner (Xcode 16.x)
+    timeout-minutes: 30
+
+    steps:
+      # 1️⃣ Check out the repo
+      - uses: actions/checkout@v4
+
+      # 2️⃣ Pick the Xcode version you want
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.4'   # or 'latest-stable'
+
+      # 3️⃣ Figure out a usable simulator destination string
+      - name: Detect first available iPhone Simulator
+        id: sim
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Grab the newest iOS runtime identifier (e.g. "iOS 17.5")
+          RUNTIME_LINE="$(xcrun simctl list runtimes | grep -E '^iOS ' | head -1)"
+          RUNTIME_VERSION="$(echo "$RUNTIME_LINE" | awk '{print $2}')"          # 17.5
+          RUNTIME_IDENTIFIER="$(echo "$RUNTIME_LINE" | cut -d'[' -f2 | cut -d']' -f1)" # com.apple.CoreSimulator.SimRuntime.iOS-17-5
+
+          # Pick the first device listed under that runtime (e.g. "iPhone 15")
+          DEVICE_NAME="$(xcrun simctl list devices "$RUNTIME_IDENTIFIER" | sed -n 's/^ *\([^()]*[^ ]\) (.*) (Available).*/\1/p' | head -1)"
+
+          DESTINATION="platform=iOS Simulator,name=${DEVICE_NAME},OS=${RUNTIME_VERSION}"
+          echo "Using destination: $DESTINATION"
+          echo "destination=$DESTINATION" >> "$GITHUB_OUTPUT"
+
+      # 4️⃣ Build & run tests
+      - name: Build & Run Tests
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project JenTest.xcodeproj \
+            -scheme JenTest \
+            -destination "${{ steps.sim.outputs.destination }}" \
+            clean test
+
+      # 5️⃣ Always save the xcresult bundle so you can open it in Xcode for details
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: XCResult
+          path: ~/Library/Developer/Xcode/DerivedData/**/Logs/Test/*.xcresult
