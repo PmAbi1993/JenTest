@@ -1,75 +1,72 @@
-name: iOS CI — macos-14 (self-provisioned simulator)
+name: iOS name: Abi
 
 on:
-  pull_request:
-    branches: [ main ]
   push:
-    branches:     [ main ]
+    branches:
+      - main
+      - 'feature/**'
+  pull_request:
+    branches:
+      - main
+      - 'feature/**'
 
 jobs:
-  test:
-    runs-on: macos-14            # Apple-silicon runner
-    timeout-minutes: 45          # first job downloads runtime
+  build-and-test:
+    name: Build and Run Unit Tests
+    runs-on: macos-latest
 
     steps:
-    # 1. Checkout
-    - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    # 2. Select an Xcode that still supports iOS 17 runtime
-    - id: xcode
-      uses: maxim-lobanov/setup-xcode@v1
-      with:
-        xcode-version: '16.1'    # keep this exact pin on macos-14
+      - name: Set up Xcode
+        uses: maxim-lobanov/setup-xcode@v4
+        with:
+          xcode-version: 'latest'
 
-    # 3. Cache / restore iOS simulator runtimes
-    - name: Cache iOS runtime
-      uses: actions/cache@v4
-      with:
-        path: /Library/Developer/CoreSimulator/Profiles/Runtimes
-        key: ${{ runner.os }}-xcode-${{ steps.xcode.outputs.xcode-path }}-ios-runtime-v1
+      - name: Build and test
+        run: |
+          xcodebuild \
+            -project JenTest.xcodeproj \
+            -scheme JenTest \
+            -sdk iphonesimulator \
+            -destination 'platform=iOS Simulator,OS=latest,name=iPhone 14' \
+            clean test
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
 
-    # 4. Ensure an iOS runtime is present (download once, then reuse cache)
-    - name: Install iOS runtime if missing
-      run: |
-        if ! xcrun simctl list runtimes | grep -q "iOS 17"; then
-          echo "▶️  Downloading iOS simulator runtime…"
-          sudo xcodebuild -downloadPlatform iOS            # 10-15 min only first time
-        else
-          echo "✅  iOS runtime already installed."
-        fi
+jobs:
+  build-and-test:
+    name: Build and Run Unit Tests
+    runs-on: macos-latest
 
-    # 5. Create a fresh simulator for this job
-    - name: Create & boot simulator
-      id: sim
-      run: |
-        set -euo pipefail
-        RUNTIME_ID=$(xcrun simctl list runtimes | grep "iOS 17" | awk -F '[()]' '{print $2}' | head -n1)
-        echo "Using runtime: $RUNTIME_ID"
-        UDID=$(xcrun simctl create "CI-iPhone15" "com.apple.CoreSimulator.SimDeviceType.iPhone-15" "$RUNTIME_ID")
-        echo "udid=$UDID" >> $GITHUB_OUTPUT
-        xcrun simctl boot "$UDID"
-        xcrun simctl bootstatus "$UDID" -b      # wait until fully booted
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    # 6. Build & test
-    - name: Build and run unit tests
-      run: |
-        set -eo pipefail
-        xcodebuild \
-          -project JenTest.xcodeproj \
-          -scheme JenTest \
-          -destination "id=${{ steps.sim.outputs.udid }}" \
-          clean test | xcbeautify
+      # If you use CocoaPods, uncomment the next steps:
+      #- name: Set up Ruby for CocoaPods
+      #  uses: ruby/setup-ruby@v1
+      #  with:
+      #    ruby-version: 2.7
+      #- name: Install CocoaPods dependencies
+      #  run: |
+      #    gem install cocoapods
+      #    pod install --repo-update
 
-    # 7. Collect xcresult bundle
-    - uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: XCResult
-        path: ~/Library/Developer/Xcode/DerivedData/**/Logs/Test/*.xcresult
+      - name: Set up Xcode
+        uses: maxim-lobanov/setup-xcode@v4
+        with:
+          xcode-version: 'latest'
 
-    # 8. Shutdown & delete simulator to keep runner clean
-    - name: Shutdown simulator
-      if: always()
-      run: |
-        xcrun simctl shutdown "${{ steps.sim.outputs.udid }}"
-        xcrun simctl delete  "${{ steps.sim.outputs.udid }}"
+      - name: Build and test
+        run: |
+          xcodebuild \
+            -project YourProject.xcodeproj \
+            -scheme YourScheme \
+            -sdk iphonesimulator \
+            -destination 'platform=iOS Simulator,OS=latest,name=iPhone 14' \
+            clean test
