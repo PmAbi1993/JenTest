@@ -1,165 +1,113 @@
-name: "Abhijith's iOS CI Runner 😀"
+   name: "Abhijith's iOS CI Runner 😀"
 
-on:
-  push:
-    branches:
-      - main
-      - 'feature/**'
-  pull_request:
-    branches:
-      - main
-      - 'feature/**'
+   on:
+     push:
+       branches:
+         - main
+         - 'feature/**'
+     pull_request:
+       branches:
+         - main
+         - 'feature/**'
 
-jobs:
-  build-and-test:
-    name: Build and Run Unit Tests
-    runs-on: macos-latest
+   jobs:
+     build-and-test:
+       runs-on: macos-15
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+       steps:
+         - name: Checkout repository
+           uses: actions/checkout@v4
 
-      - name: Set up Xcode 16.1
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: '16.1'
+         # Try to install a newer Xcode first; fall back if not available
+         - name: Set up Xcode (try 16.2, fallback to 16.1)
+           id: xcode
+           run: |
+             set -euo pipefail
+             if gh api /repos/marketplace/actions/setup-xcode >/dev/null 2>&1; then :; fi
+             echo "Attempting Xcode 16.2..."
+             if gh --version >/dev/null 2>&1; then :; fi
+           shell: bash
+         - uses: maxim-lobanov/setup-xcode@v1
+           with:
+             xcode-version: '16.2'
+           continue-on-error: true
 
-      - name: Show Xcode path
-        run: xcode-select -p
+         - name: Fallback to Xcode 16.1 if needed
+           if: failure()
+           uses: maxim-lobanov/setup-xcode@v1
+           with:
+             xcode-version: '16.1'
 
-      # Ensure simctl is ready and list available runtimes/devices for debugging
-      - name: List available simulators
-        run: |
-          xcrun simctl list -j || true
-          xcodebuild -showsdks || true
-          xcodebuild -version || true
+         - name: Show Xcode info
+           run: |
+             xcodebuild -version
+             xcode-select -p
+             xcodebuild -showsdks
 
-      # Pick a concrete iOS Simulator device dynamically (prefers iOS 18.*, iPhone 15 or 16)
-      - name: Select iOS Simulator device
-        id: pick-sim
-        shell: bash
-        run: |
-          set -euo pipefail
+         # List simulators (debugging)
+         - name: List available simulators
+           run: |
+             xcrun simctl list -j || true
 
-          # Try to find a preferred device name and OS. Adjust model preferences as needed.
-          PREFERRED_MODELS=("iPhone 16 Pro" "iPhone 16" "iPhone 15 Pro" "iPhone 15" "iPhone 14")
-          # Prefer iOS 18.*, then 17.*, then any iOS
-          PREFERRED_OSES=("18" "17")
+         # Pick and boot a simulator (same logic as before)
+         - name: Select simulator
+           id: pick-sim
+           run: |
+             set -euo pipefail
+             SIM_JSON="$(xcrun simctl list -j devices available)"
+             # Prefer iOS 18, then 17
+             for os in 18 17; do
+               for model in "iPhone 16 Pro" "iPhone 16" "iPhone 15 Pro" "iPhone 15" "iPhone 14"; do
+                 if jq -e --arg model "$model" --arg os "^iOS ${os}" \
+                   '[.devices|to_entries[]|select(.key|test($os))|.value[]|select(.isAvailable==true and .name==$model)]|length>0' \
+                   <<<"$SIM_JSON" >/dev/null; then
+                   CHOSEN_NAME="$model"
+                   CHOSEN_OS=$(jq -r --arg os "^iOS ${os}" '.devices|to_entries[]|select(.key|test($os))|.key' <<<"$SIM_JSON" | head -n1)
+                   echo "name=$CHOSEN_NAME" >> "$GITHUB_OUTPUT"
+                   echo "os=$CHOSEN_OS" >> "$GITHUB_OUTPUT"
+                   exit 0
+                 fi
+               done
+             done
+             # fallback to any
+             CHOSEN_NAME=$(jq -r '.devices|to_entries[]|select(.key|test("^iOS "))|.value[]|select(.isAvailable==true)|.name' <<<"$SIM_JSON" | head -n1)
+             CHOSEN_OS=$(jq -r '.devices|to_entries[]|select(.key|test("^iOS "))|.key' <<<"$SIM_JSON" | head -n1)
+             if [ -z "$CHOSEN_NAME" ] || [ -z "$CHOSEN_OS" ]; then
+               echo "No available iOS simulators." >&2
+               exit 1
+             fi
+             echo "name=$CHOSEN_NAME" >> "$GITHUB_OUTPUT"
+             echo "os=$CHOSEN_OS" >> "$GITHUB_OUTPUT"
 
-          SIM_JSON="$(xcrun simctl list -j devices available)"
-          CHOSEN_NAME=""
-          CHOSEN_OS=""
+         - name: Boot simulator
+           run: |
+             set -euo pipefail
+             DEVICE_NAME="${{ steps.pick-sim.outputs.name }}"
+             OS_LABEL="${{ steps.pick-sim.outputs.os }}"
+             UDID=$(xcrun simctl list -j devices available | jq -r --arg name "$DEVICE_NAME" --arg os "$OS_LABEL" '.devices[$os][]|select(.name==$name and .isAvailable==true)|.udid' | head -n1)
+             [ -n "$UDID" ] || { echo "No UDID found"; exit 1; }
+             echo "UDID=$UDID" >> "$GITHUB_ENV"
+             xcrun simctl boot "$UDID" || true
+             xcrun simctl bootstatus "$UDID" -b
 
-          choose_device() {
-            local os_prefix="$1"
-            for model in "${PREFERRED_MODELS[@]}"; do
-              # Find first available device with this model and OS prefix
-              dev_count=$(jq --arg model "$model" --arg os "^iOS ${os_prefix}" '
-                [.devices | to_entries[]
-                 | select(.key | test($os))
-                 | .value[]
-                 | select(.isAvailable == true and .name == $model)
-                ] | length' <<<"$SIM_JSON")
+         - name: Build and test
+           env:
+             NSUnbufferedIO: "YES"
+           run: |
+             set -euo pipefail
+             mkdir -p TestResults
+             xcodebuild \
+               -project JenTest.xcodeproj \
+               -scheme JenTest \
+               -sdk iphonesimulator \
+               -destination "platform=iOS Simulator,id=${UDID}" \
+               clean test \
+               -resultBundlePath "TestResults/JenTest.xcresult" \
+               -enableCodeCoverage YES
 
-              if [ "$dev_count" -gt 0 ]; then
-                CHOSEN_NAME="$model"
-                # Grab the exact OS string (e.g., "iOS 18.1")
-                CHOSEN_OS=$(jq -r --arg model "$model" --arg os "^iOS ${os_prefix}" '
-                  .devices | to_entries[]
-                  | select(.key | test($os))
-                  | .key' <<<"$SIM_JSON" | head -n1)
-                return 0
-              fi
-            done
-            return 1
-          }
-
-          # Try preferred OSes
-          for os in "${PREFERRED_OSES[@]}"; do
-            if choose_device "$os"; then
-              break
-            fi
-          done
-
-          # If still not found, pick any available iOS device
-          if [ -z "$CHOSEN_NAME" ]; then
-            # Get first available iOS device name and OS key
-            CHOSEN_NAME=$(jq -r '
-              .devices | to_entries[]
-              | select(.key | test("^iOS "))
-              | .value[]
-              | select(.isAvailable == true)
-              | .name
-              ' <<<"$SIM_JSON" | head -n1)
-            CHOSEN_OS=$(jq -r '
-              .devices | to_entries[]
-              | select(.key | test("^iOS "))
-              | .key
-              ' <<<"$SIM_JSON" | head -n1)
-          fi
-
-          if [ -z "$CHOSEN_NAME" ] || [ -z "$CHOSEN_OS" ]; then
-            echo "No available iOS Simulators found." >&2
-            exit 1
-          fi
-
-          echo "Using Simulator: $CHOSEN_NAME on $CHOSEN_OS"
-          echo "name=$CHOSEN_NAME" >> "$GITHUB_OUTPUT"
-          echo "os=$CHOSEN_OS" >> "$GITHUB_OUTPUT"
-
-      - name: Boot simulator
-        run: |
-          set -euo pipefail
-          DEVICE_NAME="${{ steps.pick-sim.outputs.name }}"
-          OS_LABEL="${{ steps.pick-sim.outputs.os }}" # e.g., "iOS 18.1"
-          # Find UDID for the chosen device+OS
-          UDID=$(xcrun simctl list -j devices available | jq -r --arg name "$DEVICE_NAME" --arg os "$OS_LABEL" '
-            .devices[$os][] | select(.name == $name and .isAvailable == true) | .udid' | head -n1)
-          if [ -z "$UDID" ] || [ "$UDID" = "null" ]; then
-            echo "Failed to resolve UDID for $DEVICE_NAME on $OS_LABEL" >&2
-            exit 1
-          fi
-          echo "Chosen UDID: $UDID"
-          xcrun simctl boot "$UDID" || true
-          # Give CoreSimulator a moment
-          xcrun simctl bootstatus "$UDID" -b -s || sleep 10
-          xcrun simctl bootstatus "$UDID" -b
-
-          # Save for later steps
-          echo "UDID=$UDID" >> "$GITHUB_ENV"
-
-      - name: Build and test (xcodebuild)
-        env:
-          NSUnbufferedIO: "YES"
-        run: |
-          set -euo pipefail
-          RESULT_BUNDLE_PATH="./TestResults/JenTest.xcresult"
-          mkdir -p "$(dirname "$RESULT_BUNDLE_PATH")"
-
-          # If you have a workspace, swap -project for -workspace and -scheme appropriately
-          xcodebuild \
-            -project JenTest.xcodeproj \
-            -scheme JenTest \
-            -sdk iphonesimulator \
-            -destination "platform=iOS Simulator,id=${UDID}" \
-            clean test \
-            -resultBundlePath "$RESULT_BUNDLE_PATH" \
-            -enableCodeCoverage YES \
-            | xcpretty || EXIT_CODE=$?
-
-          # Preserve xcresult even if tests fail
-          if [ -n "${EXIT_CODE:-}" ]; then
-            echo "xcodebuild finished with non-zero exit code: $EXIT_CODE"
-          fi
-
-          # Exit with the same code so CI fails on test failures
-          exit "${EXIT_CODE:-0}"
-
-      # Upload the result bundle for debugging in the UI
-      - name: Upload Test Results (xcresult)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: JenTest.xcresult
-          path: TestResults/JenTest.xcresult
-          if-no-files-found: warn
+         - name: Upload Test Results
+           if: always()
+           uses: actions/upload-artifact@v4
+           with:
+             name: JenTest.xcresult
+             path: TestResults/JenTest.xcresult
