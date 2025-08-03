@@ -33,5 +33,5 @@ jobs:
             -project JenTest.xcodeproj \
             -scheme JenTest \
             -sdk iphonesimulator \
-            -destination 'platform=iOS Simulator,name=Any iOS Simulator Device' \
+            -destination 'id=dvtdevice-DVTiOSDeviceSimulatorPlaceholder-iphonesimulator:placeholder' \
             clean test
