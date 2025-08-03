@@ -62,7 +62,7 @@ jobs:
 
       - name: Test
         #run: xcodebuild test -scheme KukaiCoreSwift -destination "platform=iOS Simulator,OS=16.4,name=iPhone 14" -enableCodeCoverage YES -resultBundlePath "~/xcode-$NOW.xcresult"
-        run: xcodebuild test -scheme JenTest -destination "platform=iOS Simulator,OS=18.0,name=iPhone 16" -enableCodeCoverage YES -resultBundlePath "~/xcode-$NOW.xcresult"
+        run: xcodebuild test -scheme JenTest -destination "platform=iOS Simulator,OS=18.5,name=iPhone 16" -enableCodeCoverage YES -resultBundlePath "~/xcode-$NOW.xcresult"
 
 
 
@@ -79,4 +79,4 @@ jobs:
       #   with:
       #     name: "results-${{ env.NOW }}.xcresult"
       #     path: "~/xcode-${{ env.NOW }}.xcresult"
-      
+      # { platform:iOS Simulator, id:EC9EBF38-9BEB-413B-B2FF-E8AE7E5F437B, OS:18.5, name:iPhone 16 }
