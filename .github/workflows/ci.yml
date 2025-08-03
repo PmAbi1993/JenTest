@@ -1,34 +1,10 @@
-name: "Abhijith's iOS CI Runner 😀"
+Run scheme_list=$(xcodebuild -list -json | tr -d "\n")
+2025-08-03 03:24:46.282 xcodebuild[2144:13672] Writing error result bundle to /var/folders/y6/nj790rtn62lfktb1sh__79hc0000gn/T/ResultBundle_2025-03-08_03-24-0046.xcresult
+xcodebuild: error: Unable to read project 'JenTest.xcodeproj'.
+	Reason: The project ‘JenTest’ cannot be opened because it is in a future Xcode project file format (77). Adjust the project format using a compatible version of Xcode to allow it to be opened by this version of Xcode.
 
-on:
-  push:
-    branches:
-      - main
-      - 'feature/**'
-  pull_request:
-    branches:
-      - main
-      - 'feature/**'
 
-jobs:
-  build-and-test:
-    name: Build and Run Unit Tests
-    runs-on: macos-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Xcode
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: 'latest'
-
-      - name: Build and test
-        run: |
-          xcodebuild \
-            -project JenTest.xcodeproj \
-            -scheme JenTest \
-            -sdk iphonesimulator \
-            -destination 'platform=iOS Simulator,OS=latest,name=iPhone 14' \
-            clean test
+/opt/homebrew/Cellar/ruby@3.3/3.3.9/lib/ruby/3.3.0/json/common.rb:220:in `parse': unexpected token at '' (JSON::ParserError)
+	from /opt/homebrew/Cellar/ruby@3.3/3.3.9/lib/ruby/3.3.0/json/common.rb:220:in `parse'
+	from -e:1:in `<main>'
+Error: Process completed with exit code 1.
