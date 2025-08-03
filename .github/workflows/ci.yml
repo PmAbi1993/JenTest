@@ -24,11 +24,14 @@ jobs:
         with:
           xcode-version: '16.1'
 
+      - name: Show Xcode path
+        run: xcode-select -p
+
       - name: Build and test
         run: |
           xcodebuild \
             -project JenTest.xcodeproj \
             -scheme JenTest \
             -sdk iphonesimulator \
-            -destination 'platform=iOS Simulator,OS=latest,name=iPhone 14' \
+            -destination 'platform=iOS Simulator,name=Any iOS Simulator Device' \
             clean test
