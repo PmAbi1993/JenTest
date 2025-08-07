@@ -4,6 +4,7 @@ on:
     branches:
       - main
       - develop
+      - 'feature/**'
   pull_request:
     branches:
       - main
@@ -25,4 +26,4 @@ jobs:
       - name: Build and test
         run: |
           set -o pipefail &&
-          xcodebuild test -scheme JenTest -destination 'platform=iOS Simulator,name=iPhone 15 Pro,OS=17.5' | xcpretty
+          xcodebuild test -scheme JenTest -destination 'platform=iOS Simulator,OS=latest' | xcpretty
