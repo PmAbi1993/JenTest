@@ -29,5 +29,14 @@ jobs:
 
       - name: Build and test
         run: |
-          set -o pipefail &&
-          xcodebuild test -scheme JenTest -destination 'platform=iOS Simulator,name=Any iOS Simulator Device' | xcpretty
+          set -o pipefail
+          # Find an available iPhone simulator and use it for the test
+          DESTINATION_SIMULATOR_ID=$(xcrun simctl list devices available | grep "iPhone" | head -n 1 | awk -F'[()]' '{ for(i=1; i<=NF; i++) if($i ~ /[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}/) print $i }' | head -n 1)
+
+          if [ -z "$DESTINATION_SIMULATOR_ID" ]; then
+            echo "Could not find an available iPhone simulator."
+            exit 1
+          fi
+
+          echo "Found simulator with ID: $DESTINATION_SIMULATOR_ID"
+          xcodebuild test -scheme JenTest -destination "id=$DESTINATION_SIMULATOR_ID" | xcpretty
