@@ -1,4 +1,4 @@
-name: Build and Test
+name: Duuude
 
 on:
   push:
@@ -14,30 +14,36 @@ jobs:
   build-and-test:
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-      - uses: maxim-lobanov/setup-xcode@v1
-        with: { xcode-version: '16.2' }
+    - uses: maxim-lobanov/setup-xcode@v1
+      with: { xcode-version: '16.2' }
 
-      # 🔑 NEW: ensure an iOS runtime exists
-      - name: Install iOS simulator runtime if missing
-        run: |
-          if ! xcrun simctl list runtimes | grep -q "iOS"; then
-            echo "Downloading latest iOS runtime…"
-            sudo xcodebuild -downloadPlatform iOS      # or add -buildVersion 18.2
-          fi
+    # 🔑 NEW — make sure an iOS runtime exists
+    - name: Install iOS simulator runtime if missing
+      run: |
+        set -eo pipefail
+        if ! xcrun simctl list runtimes | grep -q "iOS"; then
+          echo "::group::Downloading iOS runtime"
+          sudo xcodebuild -license accept          # non‑interactive
+          sudo xcodebuild -downloadPlatform iOS    # grabs the newest runtime
+          sudo xcodebuild -runFirstLaunch          # registers it with CoreSimulator
+          echo "::endgroup::"
+        fi
 
-      - id: sim
-        uses: futureware-tech/simulator-action@v4
-        with:
-          model: 'iPhone 15'
-          wait_for_boot: true
-          erase_before_boot: true
+    - id: sim
+      uses: futureware-tech/simulator-action@v4
+      with:
+        model: 'iPhone 15'
+        wait_for_boot: true
+        erase_before_boot: true
 
-      - name: Build & test
-        run: |
-          set -o pipefail
-          xcodebuild \
-            -scheme JenTest \
-            -destination "id=${{ steps.sim.outputs.udid }}" \
-            test | xcpretty --test --color
+    - name: Build & test
+      env:
+        DESTINATION_UDID: ${{ steps.sim.outputs.udid }}
+      run: |
+        set -o pipefail
+        xcodebuild test \
+          -scheme JenTest \
+          -destination "id=$DESTINATION_UDID" \
+          | xcpretty --test --color
