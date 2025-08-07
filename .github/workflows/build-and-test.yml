@@ -1,34 +1,51 @@
-name: Build and Test
+name: Build and Test
+
 on:
   push:
-    branches:
-      - main
-      - develop
-      - 'feature/**'
+    branches: [ main, develop, 'feature/**' ]
   pull_request:
-    branches:
-      - main
-      - develop
+    branches: [ main, develop ]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}‑${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build-and-test:
-    name: Build and Test
-    runs-on: macos-14
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    runs-on: macos-14          # ↳ keep the runner explicit; “macos‑latest” is a moving target
+    timeout-minutes: 60        # ↳ prevents hung simulators from burning minutes
 
-      - name: Select Xcode version
-        uses: maxim-lobanov/setup-xcode@v1
+    steps:
+      # 1. Checkout code -------------------------------------------------------
+      - uses: actions/checkout@v4
+
+      # 2. Pick an Xcode version (installs tools & SDKs) -----------------------
+      - uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: '16.2'
 
-      - name: Build and test
+      # 3. Launch (or create) a clean simulator and wait until it is booted ----
+      #    The action returns its UDID, so we never have to hard‑code model/OS.
+      - id: sim
+        name: Launch iOS simulator
+        uses: futureware-tech/simulator-action@v4
+        with:
+          model: 'iPhone 15'          # any model listed in the action’s wiki works
+          wait_for_boot: true
+          erase_before_boot: true     # start from a clean slate on every run
+
+      # 4. Build and test against that exact device ---------------------------
+      - name: Build & run tests
+        env:
+          DESTINATION_UDID: ${{ steps.sim.outputs.udid }}
         run: |
           set -o pipefail
-          # Use a generic destination that allows xcodebuild to pick an available simulator.
-          xcodebuild test -scheme JenTest -destination 'platform=iOS Simulator,name=iPhone' | xcpretty
+          xcodebuild \
+            -scheme JenTest \
+            -destination "id=$DESTINATION_UDID" \
+            test | xcpretty --test --color
+
+      # 5. (Optional) dump device list only when the job fails -----------------
+      - name: List available simulators (debug only)
+        if: failure()
+        run: xcrun simctl list devices
