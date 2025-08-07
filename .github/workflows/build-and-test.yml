@@ -30,4 +30,4 @@ jobs:
       - name: Build and test
         run: |
           set -o pipefail &&
-          xcodebuild test -scheme JenTest -destination 'platform=iOS Simulator,name=iPhone 16,OS=18.0' | xcpretty
+          xcodebuild test -scheme JenTest -destination 'platform=iOS Simulator,name=Any iOS Simulator Device' | xcpretty
