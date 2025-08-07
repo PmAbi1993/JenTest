@@ -1,4 +1,4 @@
-name: Duuude
+name: Build and Test   # — a universal iOS CI workflow
 
 on:
   push:
@@ -7,43 +7,64 @@ on:
     branches: [ main, develop ]
 
 concurrency:
-  group: ${{ github.workflow }}‑${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build-and-test:
-    runs-on: macos-14
+    runs-on: macos-14            # macOS‑latest ≃ macOS‑15 today, but keep this explicit
+    timeout-minutes: 60
+
+    env:
+      SCHEME: JenTest            # <—— replace with your scheme name
+      DEVICE_MODEL: 'iPhone 15'  # <—— or any model listed in the simulator‑action wiki
+
     steps:
+    # 1️⃣ Check out code --------------------------------------------------------
     - uses: actions/checkout@v4
 
+    # 2️⃣ Select Xcode ----------------------------------------------------------
     - uses: maxim-lobanov/setup-xcode@v1
-      with: { xcode-version: '16.2' }
+      with:
+        xcode-version: '16.2'    # roll back to 16.1 if you don’t need the 18.2 SDK
 
-    # 🔑 NEW — make sure an iOS runtime exists
-    - name: Install iOS simulator runtime if missing
+    # 3️⃣ Guarantee an iOS runtime exists --------------------------------------
+    - name: Ensure iOS simulator runtime is present
       run: |
-        set -eo pipefail
-        if ! xcrun simctl list runtimes | grep -q "iOS"; then
-          echo "::group::Downloading iOS runtime"
-          sudo xcodebuild -license accept          # non‑interactive
-          sudo xcodebuild -downloadPlatform iOS    # grabs the newest runtime
-          sudo xcodebuild -runFirstLaunch          # registers it with CoreSimulator
-          echo "::endgroup::"
+        set -euo pipefail
+        if xcrun simctl list runtimes | grep -q "iOS"; then
+          echo "✅ iOS runtime already installed"
+          exit 0
         fi
 
+        echo "🔧 No iOS runtime – downloading …"
+        sudo xcodebuild -license accept >/dev/null        # non‑interactive
+        sudo xcodebuild -downloadPlatform iOS             # grabs latest runtime
+        sudo xcodebuild -runFirstLaunch                   # registers it
+
+        xcrun simctl list runtimes | grep iOS || \
+          { echo "❌ Runtime still missing after download"; exit 1; }
+
+    # 4️⃣ Boot a clean simulator & get its UDID --------------------------------
     - id: sim
       uses: futureware-tech/simulator-action@v4
       with:
-        model: 'iPhone 15'
+        model: ${{ env.DEVICE_MODEL }}
         wait_for_boot: true
-        erase_before_boot: true
+        erase_before_boot: true  # avoids state bleed between jobs
 
-    - name: Build & test
-      env:
-        DESTINATION_UDID: ${{ steps.sim.outputs.udid }}
+    # 5️⃣ Build & test ----------------------------------------------------------
+    - name: Build and run tests
       run: |
         set -o pipefail
         xcodebuild test \
-          -scheme JenTest \
-          -destination "id=$DESTINATION_UDID" \
+          -scheme "$SCHEME" \
+          -destination "id=${{ steps.sim.outputs.udid }}" \
           | xcpretty --test --color
+
+    # 6️⃣ Extra diagnostics on failure -----------------------------------------
+    - name: List devices & runtimes (debug only)
+      if: failure()
+      run: |
+        xcrun simctl list devices
+        xcrun simctl list runtimes
