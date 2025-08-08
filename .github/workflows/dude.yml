@@ -28,14 +28,15 @@ jobs:
       - name: Ensure iOS runtime is present (download + register only if missing)
         run: |
           set -euo pipefail
-          if xcrun simctl list runtimes | grep -q "iOS"; then
+          # Check strictly for iOS runtimes (avoid matching visionOS)
+          if xcrun simctl list runtimes | awk '/^iOS [0-9]/{found=1} END{exit !found}'; then
             echo "✅ iOS runtime already installed"
           else
             echo "🔧 Downloading iOS runtime…"
             sudo xcodebuild -license accept >/dev/null
             sudo xcodebuild -downloadPlatform iOS
             sudo xcodebuild -runFirstLaunch
-            xcrun simctl list runtimes | grep iOS || { echo "❌ Runtime still missing"; exit 1; }
+            xcrun simctl list runtimes | awk '/^iOS [0-9]/{print}' || { echo "❌ Runtime still missing"; exit 1; }
           fi
 
       - id: sim
@@ -55,7 +56,15 @@ jobs:
           echo "PWD: $(pwd)"
           echo "Repo root contents:" && ls -la
 
-          DEST="id=${{ steps.sim.outputs.udid }}"
+          # Choose destination: prefer specific UDID if visible to xcodebuild, else fallback to platform-based
+          UDID="${{ steps.sim.outputs.udid }}"
+          if [ -n "$UDID" ] && xcrun simctl list devices | grep -q "$UDID"; then
+            echo "Using booted simulator UDID: $UDID"
+            DEST="id=$UDID"
+          else
+            echo "UDID not visible to xcodebuild; using platform-based destination"
+            DEST="platform=iOS Simulator,name=${{ env.DEVICE_MODEL }},OS=latest"
+          fi
           ROOT="${GITHUB_WORKSPACE:-$PWD}"
 
           # Find workspace or project using absolute paths (max depth 2 covers common layouts)
@@ -71,18 +80,18 @@ jobs:
           if command -v xcpretty >/dev/null; then
             if [ -n "${WS}" ]; then
               echo "➡️ Using workspace: ${WS}"
-              xcodebuild -workspace "${WS}" -scheme "$SCHEME" -destination "$DEST" test | xcpretty --test --color
+              xcodebuild -workspace "${WS}" -scheme "$SCHEME" -destination "$DEST" -destination-timeout 120 test | xcpretty --test --color
             else
               echo "➡️ Using project: ${PROJ}"
-              xcodebuild -project "${PROJ}" -scheme "$SCHEME" -destination "$DEST" test | xcpretty --test --color
+              xcodebuild -project "${PROJ}" -scheme "$SCHEME" -destination "$DEST" -destination-timeout 120 test | xcpretty --test --color
             fi
           else
             if [ -n "${WS}" ]; then
               echo "➡️ Using workspace: ${WS}"
-              xcodebuild -workspace "${WS}" -scheme "$SCHEME" -destination "$DEST" test
+              xcodebuild -workspace "${WS}" -scheme "$SCHEME" -destination "$DEST" -destination-timeout 120 test
             else
               echo "➡️ Using project: ${PROJ}"
-              xcodebuild -project "${PROJ}" -scheme "$SCHEME" -destination "$DEST" test
+              xcodebuild -project "${PROJ}" -scheme "$SCHEME" -destination "$DEST" -destination-timeout 120 test
             fi
           fi
 
