@@ -1,82 +1,82 @@
-name: Unit Test
-on:
-  push:
-    branches:
-      - main
-      - develop
-  pull_request:
-    branches:
-      - main
-      - develop
+# name: Unit Test
+# on:
+#   push:
+#     branches:
+#       - main
+#       - develop
+#   pull_request:
+#     branches:
+#       - main
+#       - develop
 
-jobs:
-  deploy:
-    name: Running unit tests
-    runs-on: macos-15
-    steps:
-      - name: Select Xcode version
-        #run: sudo xcode-select -s '/Applications/Xcode_14.3.1.app/Contents/Developer'
-        run: sudo xcode-select -s '/Applications/Xcode_16.app/Contents/Developer'
+# jobs:
+#   deploy:
+#     name: Running unit tests
+#     runs-on: macos-15
+#     steps:
+#       - name: Select Xcode version
+#         #run: sudo xcode-select -s '/Applications/Xcode_14.3.1.app/Contents/Developer'
+#         run: sudo xcode-select -s '/Applications/Xcode_16.app/Contents/Developer'
         
-      - name: Checkout repository
-        uses: actions/checkout@v4.1.1
+#       - name: Checkout repository
+#         uses: actions/checkout@v4.1.1
 
-      - name: Get current date
-        run: echo "NOW=$(date +'%Y-%m-%dT%H-%M-%S')" >> $GITHUB_ENV
+#       - name: Get current date
+#         run: echo "NOW=$(date +'%Y-%m-%dT%H-%M-%S')" >> $GITHUB_ENV
 
 
 
-      # # Temporary step due to Xcode 15 / Github actions runner issues
-      # - name: Install iOS 16 simulator for Xcode 15
-      #   run: |
-      #     # Make iOS 16.4 simulator runtime available to Xcode 15
-      #     sudo mkdir -p /Library/Developer/CoreSimulator/Profiles/Runtimes
-      #     sudo ln -s /Applications/Xcode_14.3.1.app/Contents/Developer/Platforms/iPhoneOS.platform/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS.simruntime /Library/Developer/CoreSimulator/Profiles/Runtimes/iOS\ 16.4.simruntime
+#       # # Temporary step due to Xcode 15 / Github actions runner issues
+#       # - name: Install iOS 16 simulator for Xcode 15
+#       #   run: |
+#       #     # Make iOS 16.4 simulator runtime available to Xcode 15
+#       #     sudo mkdir -p /Library/Developer/CoreSimulator/Profiles/Runtimes
+#       #     sudo ln -s /Applications/Xcode_14.3.1.app/Contents/Developer/Platforms/iPhoneOS.platform/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS.simruntime /Library/Developer/CoreSimulator/Profiles/Runtimes/iOS\ 16.4.simruntime
            
-      #     # Create an iOS 16.4 simulator
-      #     xcrun simctl create "iPhone 14 Pro (16.4)" "com.apple.CoreSimulator.SimDeviceType.iPhone-14-Pro" "com.apple.CoreSimulator.SimRuntime.iOS-16-4"
+#       #     # Create an iOS 16.4 simulator
+#       #     xcrun simctl create "iPhone 14 Pro (16.4)" "com.apple.CoreSimulator.SimDeviceType.iPhone-14-Pro" "com.apple.CoreSimulator.SimRuntime.iOS-16-4"
       
 
 
-      # - name: Install yeetd
-      #   run: |
-      #     wget https://github.com/biscuitehh/yeetd/releases/download/1.0/yeetd-normal.pkg
-      #     sudo installer -pkg yeetd-normal.pkg -target /
-      #     yeetd &
+#       # - name: Install yeetd
+#       #   run: |
+#       #     wget https://github.com/biscuitehh/yeetd/releases/download/1.0/yeetd-normal.pkg
+#       #     sudo installer -pkg yeetd-normal.pkg -target /
+#       #     yeetd &
 
 
 
 
-      # - name: Initialize CodeQL
-      #   uses: github/codeql-action/init@v3
-      #   with:
-      #     languages: "swift"
+#       # - name: Initialize CodeQL
+#       #   uses: github/codeql-action/init@v3
+#       #   with:
+#       #     languages: "swift"
       
 
 
-      # - name: Launch simulator
-      #   run: open -a Simulator --args -CurrentDeviceUDID $(xcrun simctl list --json | ruby -e "require 'json'; puts JSON.parse(ARGF.read)['devices']['com.apple.CoreSimulator.SimRuntime.iOS-17-0'].find { |s| s['name'] == 'iPhone 15' }['udid']")
+#       # - name: Launch simulator
+#       #   run: open -a Simulator --args -CurrentDeviceUDID $(xcrun simctl list --json | ruby -e "require 'json'; puts JSON.parse(ARGF.read)['devices']['com.apple.CoreSimulator.SimRuntime.iOS-17-0'].find { |s| s['name'] == 'iPhone 15' }['udid']")
 
 
 
 
-      - name: Test
-        #run: xcodebuild test -scheme KukaiCoreSwift -destination "platform=iOS Simulator,OS=16.4,name=iPhone 14" -enableCodeCoverage YES -resultBundlePath "~/xcode-$NOW.xcresult"
-        run: xcodebuild test -scheme JenTest -destination "platform=iOS Simulator,OS=18.5,name=iPhone 16" -enableCodeCoverage YES -resultBundlePath "~/xcode-$NOW.xcresult"
+#       - name: Test
+#         #run: xcodebuild test -scheme KukaiCoreSwift -destination "platform=iOS Simulator,OS=16.4,name=iPhone 14" -enableCodeCoverage YES -resultBundlePath "~/xcode-$NOW.xcresult"
+#         run: xcodebuild test -scheme JenTest -destination "platform=iOS Simulator,OS=18.5,name=iPhone 16" -enableCodeCoverage YES -resultBundlePath "~/xcode-$NOW.xcresult"
 
 
 
-      # - name: Perform CodeQL Analysis
-      #   uses: github/codeql-action/analyze@v3
-      #   with:
-      #     category: "/language:swift"
+#       # - name: Perform CodeQL Analysis
+#       #   uses: github/codeql-action/analyze@v3
+#       #   with:
+#       #     category: "/language:swift"
       
 
 
-      # - name: Upload results
-        # if: ${{ success() || failure() }}
-      #   uses: actions/upload-artifact@v4.3.1
-      #   with:
-      #     name: "results-${{ env.NOW }}.xcresult"
-      #     path: "~/xcode-${{ env.NOW }}.xcresult"
-      # { platform:iOS Simulator, id:EC9EBF38-9BEB-413B-B2FF-E8AE7E5F437B, OS:18.5, name:iPhone 16 }
+#       # - name: Upload results
+#         # if: ${{ success() || failure() }}
+#       #   uses: actions/upload-artifact@v4.3.1
+#       #   with:
+#       #     name: "results-${{ env.NOW }}.xcresult"
+#       #     path: "~/xcode-${{ env.NOW }}.xcresult"
+#       # { platform:iOS Simulator, id:EC9EBF38-9BEB-413B-B2FF-E8AE7E5F437B, OS:18.5, name:iPhone 16 }

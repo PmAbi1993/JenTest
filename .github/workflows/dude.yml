@@ -1,0 +1,104 @@
+name: iOS CI (download runtime if missing)
+
+on:
+  push:
+    branches: [ main, develop, 'feature/**' ]
+  pull_request:
+    branches: [ main, develop ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: macos-14   # or macos-15 — works on both
+    timeout-minutes: 75
+    env:
+      SCHEME: JenTest
+      DEVICE_MODEL: "iPhone 15"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.2'
+
+      - name: Ensure iOS runtime is present (download + register only if missing)
+        run: |
+          set -euo pipefail
+          # Check strictly for iOS runtimes (avoid matching visionOS)
+          if xcrun simctl list runtimes | awk '/^iOS [0-9]/{found=1} END{exit !found}'; then
+            echo "✅ iOS runtime already installed"
+          else
+            echo "🔧 Downloading iOS runtime…"
+            sudo xcodebuild -license accept >/dev/null
+            sudo xcodebuild -downloadPlatform iOS
+            sudo xcodebuild -runFirstLaunch
+            xcrun simctl list runtimes | awk '/^iOS [0-9]/{print}' || { echo "❌ Runtime still missing"; exit 1; }
+          fi
+
+      - id: sim
+        name: Launch simulator
+        uses: futureware-tech/simulator-action@v4
+        with:
+          model: ${{ env.DEVICE_MODEL }}
+          wait_for_boot: true
+          erase_before_boot: true
+
+      - name: Build & Test
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "PWD: $(pwd)"
+          echo "Repo root contents:" && ls -la
+
+          ROOT="${GITHUB_WORKSPACE:-$PWD}"
+
+          # Find top-level workspace (exclude internal .xcodeproj/workspace), else fall back to .xcodeproj
+          WS=$(find "$ROOT" -maxdepth 3 -path "*/.xcodeproj/*" -prune -o -type d -name "*.xcworkspace" -print -quit 2>/dev/null | head -n 1 || true)
+          PROJ=$(find "$ROOT" -maxdepth 3 -type d -name "*.xcodeproj" -print -quit 2>/dev/null | head -n 1 || true)
+
+          # Decide destination. Prefer the booted UDID; if absent, use a generic iOS Simulator destination.
+          UDID="${{ steps.sim.outputs.udid }}"
+          DEFAULT_DEST="platform=iOS Simulator"
+          if [ -n "$UDID" ]; then
+            echo "Preferring booted simulator UDID: $UDID"
+            DEST="id=$UDID"
+          else
+            echo "No UDID provided by simulator action. Using generic iOS Simulator destination."
+            DEST="$DEFAULT_DEST"
+          fi
+
+          if [ -z "${WS}" ] && [ -z "${PROJ}" ]; then
+            echo "❌ No .xcworkspace or .xcodeproj found under $ROOT" >&2
+            echo "Tree (depth 2):" && find "$ROOT" -maxdepth 2 -print
+            exit 66
+          fi
+
+          if command -v xcpretty >/dev/null; then
+            if [ -n "${WS}" ]; then
+              echo "➡️ Using workspace: ${WS}"
+              xcodebuild -workspace "${WS}" -scheme "$SCHEME" -destination "$DEST" -destination-timeout 120 test | xcpretty --test --color
+            else
+              echo "➡️ Using project: ${PROJ}"
+              xcodebuild -project "${PROJ}" -scheme "$SCHEME" -destination "$DEST" -destination-timeout 120 test | xcpretty --test --color
+            fi
+          else
+            if [ -n "${WS}" ]; then
+              echo "➡️ Using workspace: ${WS}"
+              xcodebuild -workspace "${WS}" -scheme "$SCHEME" -destination "$DEST" -destination-timeout 120 test
+            else
+              echo "➡️ Using project: ${PROJ}"
+              xcodebuild -project "${PROJ}" -scheme "$SCHEME" -destination "$DEST" -destination-timeout 120 test
+            fi
+          fi
+
+      - name: Debug info (only on failure)
+        if: failure()
+        run: |
+          xcrun simctl list devices
+          xcrun simctl list runtimes
