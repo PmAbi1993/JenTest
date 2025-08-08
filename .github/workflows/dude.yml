@@ -47,22 +47,42 @@ jobs:
           erase_before_boot: true
 
       - name: Build & Test
+        working-directory: ${{ github.workspace }}
+        shell: bash
         run: |
-          set -o pipefail
+          set -euo pipefail
+
+          echo "PWD: $(pwd)"
+          echo "Repo root contents:" && ls -la
+
           DEST="id=${{ steps.sim.outputs.udid }}"
-          WS=$(ls -1 *.xcworkspace 2>/dev/null | head -n1 || true)
-          PROJ=$(ls -1 *.xcodeproj 2>/dev/null | head -n1 || true)
+          ROOT="${GITHUB_WORKSPACE:-$PWD}"
+
+          # Find workspace or project using absolute paths (max depth 2 covers common layouts)
+          WS=$(find "$ROOT" -maxdepth 2 -type d -name "*.xcworkspace" -not -path "*/.xcodeproj/*" -print -quit || true)
+          PROJ=$(find "$ROOT" -maxdepth 2 -type d -name "*.xcodeproj" -print -quit || true)
+
+          if [ -z "${WS}" ] && [ -z "${PROJ}" ]; then
+            echo "❌ No .xcworkspace or .xcodeproj found under $ROOT" >&2
+            echo "Tree (depth 2):" && find "$ROOT" -maxdepth 2 -print
+            exit 66
+          fi
+
           if command -v xcpretty >/dev/null; then
-            if [ -n "$WS" ]; then
-              xcodebuild -workspace "$WS" -scheme "$SCHEME" -destination "$DEST" test | xcpretty --test --color
+            if [ -n "${WS}" ]; then
+              echo "➡️ Using workspace: ${WS}"
+              xcodebuild -workspace "${WS}" -scheme "$SCHEME" -destination "$DEST" test | xcpretty --test --color
             else
-              xcodebuild -project "$PROJ" -scheme "$SCHEME" -destination "$DEST" test | xcpretty --test --color
+              echo "➡️ Using project: ${PROJ}"
+              xcodebuild -project "${PROJ}" -scheme "$SCHEME" -destination "$DEST" test | xcpretty --test --color
             fi
           else
-            if [ -n "$WS" ]; then
-              xcodebuild -workspace "$WS" -scheme "$SCHEME" -destination "$DEST" test
+            if [ -n "${WS}" ]; then
+              echo "➡️ Using workspace: ${WS}"
+              xcodebuild -workspace "${WS}" -scheme "$SCHEME" -destination "$DEST" test
             else
-              xcodebuild -project "$PROJ" -scheme "$SCHEME" -destination "$DEST" test
+              echo "➡️ Using project: ${PROJ}"
+              xcodebuild -project "${PROJ}" -scheme "$SCHEME" -destination "$DEST" test
             fi
           fi
 
