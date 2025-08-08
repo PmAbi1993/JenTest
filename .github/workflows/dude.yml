@@ -1,0 +1,73 @@
+name: iOS CI (download runtime if missing)
+
+on:
+  push:
+    branches: [ main, develop, 'feature/**' ]
+  pull_request:
+    branches: [ main, develop ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: macos-14   # or macos-15 — works on both
+    timeout-minutes: 75
+    env:
+      SCHEME: JenTest
+      DEVICE_MODEL: "iPhone 15"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.2'
+
+      - name: Ensure iOS runtime is present (download + register only if missing)
+        run: |
+          set -euo pipefail
+          if xcrun simctl list runtimes | grep -q "iOS"; then
+            echo "✅ iOS runtime already installed"
+          else
+            echo "🔧 Downloading iOS runtime…"
+            sudo xcodebuild -license accept >/dev/null
+            sudo xcodebuild -downloadPlatform iOS
+            sudo xcodebuild -runFirstLaunch
+            xcrun simctl list runtimes | grep iOS || { echo "❌ Runtime still missing"; exit 1; }
+          fi
+
+      - id: sim
+        name: Launch simulator
+        uses: futureware-tech/simulator-action@v4
+        with:
+          model: ${{ env.DEVICE_MODEL }}
+          wait_for_boot: true
+          erase_before_boot: true
+
+      - name: Build & Test
+        run: |
+          set -o pipefail
+          DEST="id=${{ steps.sim.outputs.udid }}"
+          WS=$(ls -1 *.xcworkspace 2>/dev/null | head -n1 || true)
+          PROJ=$(ls -1 *.xcodeproj 2>/dev/null | head -n1 || true)
+          if command -v xcpretty >/dev/null; then
+            if [ -n "$WS" ]; then
+              xcodebuild -workspace "$WS" -scheme "$SCHEME" -destination "$DEST" test | xcpretty --test --color
+            else
+              xcodebuild -project "$PROJ" -scheme "$SCHEME" -destination "$DEST" test | xcpretty --test --color
+            fi
+          else
+            if [ -n "$WS" ]; then
+              xcodebuild -workspace "$WS" -scheme "$SCHEME" -destination "$DEST" test
+            else
+              xcodebuild -project "$PROJ" -scheme "$SCHEME" -destination "$DEST" test
+            fi
+          fi
+
+      - name: Debug info (only on failure)
+        if: failure()
+        run: |
+          xcrun simctl list devices
+          xcrun simctl list runtimes
