@@ -56,20 +56,37 @@ jobs:
           echo "PWD: $(pwd)"
           echo "Repo root contents:" && ls -la
 
-          # Choose destination: prefer specific UDID if visible to xcodebuild, else fallback to platform-based
-          UDID="${{ steps.sim.outputs.udid }}"
-          if [ -n "$UDID" ] && xcrun simctl list devices | grep -q "$UDID"; then
-            echo "Using booted simulator UDID: $UDID"
-            DEST="id=$UDID"
-          else
-            echo "UDID not visible to xcodebuild; using platform-based destination"
-            DEST="platform=iOS Simulator,name=${{ env.DEVICE_MODEL }},OS=latest"
-          fi
           ROOT="${GITHUB_WORKSPACE:-$PWD}"
 
-          # Find workspace or project using absolute paths (max depth 2 covers common layouts)
-          WS=$(find "$ROOT" -maxdepth 2 -type d -name "*.xcworkspace" -not -path "*/.xcodeproj/*" -print -quit || true)
-          PROJ=$(find "$ROOT" -maxdepth 2 -type d -name "*.xcodeproj" -print -quit || true)
+          # Find top-level workspace (exclude internal .xcodeproj/workspace), else fall back to .xcodeproj
+          WS=$(find "$ROOT" -maxdepth 3 -path "*/.xcodeproj/*" -prune -o -type d -name "*.xcworkspace" -print -quit 2>/dev/null | head -n 1 || true)
+          PROJ=$(find "$ROOT" -maxdepth 3 -type d -name "*.xcodeproj" -print -quit 2>/dev/null | head -n 1 || true)
+
+          # Decide destination. Prefer UDID only if xcodebuild sees it for this scheme.
+          UDID="${{ steps.sim.outputs.udid }}"
+          DEFAULT_DEST="platform=iOS Simulator,name=${{ env.DEVICE_MODEL }},OS=latest"
+          if [ -n "$UDID" ]; then
+            if [ -n "${WS}" ]; then
+              if xcodebuild -workspace "${WS}" -scheme "$SCHEME" -showdestinations 2>/dev/null | grep -q "$UDID"; then
+                echo "Using booted simulator UDID: $UDID"
+                DEST="id=$UDID"
+              else
+                echo "UDID not listed by xcodebuild for this workspace/scheme. Falling back to platform-based destination."
+                DEST="$DEFAULT_DEST"
+              fi
+            else
+              if xcodebuild -project "${PROJ}" -scheme "$SCHEME" -showdestinations 2>/dev/null | grep -q "$UDID"; then
+                echo "Using booted simulator UDID: $UDID"
+                DEST="id=$UDID"
+              else
+                echo "UDID not listed by xcodebuild for this project/scheme. Falling back to platform-based destination."
+                DEST="$DEFAULT_DEST"
+              fi
+            fi
+          else
+            echo "No UDID provided by simulator action. Using platform-based destination."
+            DEST="$DEFAULT_DEST"
+          fi
 
           if [ -z "${WS}" ] && [ -z "${PROJ}" ]; then
             echo "❌ No .xcworkspace or .xcodeproj found under $ROOT" >&2
